@@ -3,6 +3,7 @@
 requirements:
 - Python >=3.8
 - **Ogmios 6.6.*, connected to a Cardano node**
+- Ogmios needs **CBOR OUTPUT ENABLED**
 
 tested with local Ogmios/node, demeter should also work
 
@@ -147,6 +148,14 @@ to mine.
     "MINER_EXECUTABLE": "miners/gpu/run.sh",
     "MINERS": "127.0.0.1:2023",
 ...
+````
+# using a demeter ogmios instance:
+
+this disables SSL certificate validation, only use if you know what you're doing!
+
+````
+    "OGMIOS": "wss://dmtr_ogmios1{rest_of_your_api_key}.mainnet-v6.ogmios-m1.demeter.run",
+    "OGMIOS_DISABLE_CERTIFICATE_CHECK": true,
 ````
 
 # docker
