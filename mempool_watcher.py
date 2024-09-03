@@ -116,6 +116,12 @@ class MempoolWatcher:
                                 self.state['wallet_utxos'].append({'transaction': {'id': tx['id']}, 'index': i, 'address': self.wallet, 'value': txo['value']})
 
                     # check tuna transactions
+                    if 'cbor' not in tx:
+                        self.log(f"<x1b[91m----------------------------------------------------------------------------------------------------<x1b[0m")
+                        self.log(f"<x1b[91m----------------------------------------------------------------------------------------------------<x1b[0m")
+                        self.log(f"<x1b[91merror: tx-object contains no CBOR. Ogmios from v6 on doesn't anymore include CBOR by default, enable it with --include-cbor<x1b[0m")
+                        self.log(f"<x1b[91m----------------------------------------------------------------------------------------------------<x1b[0m")
+                        self.log(f"<x1b[91m----------------------------------------------------------------------------------------------------<x1b[0m")
                     cbor_hex = tx['cbor']
                     if self.is_possible_tuna_tx(cbor_hex):
                         tuna_tx = self.deserialize_tuna_tx(cbor_hex)
