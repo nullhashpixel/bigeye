@@ -61,6 +61,8 @@ class ChainWatcher:
         self.thread = Thread(target=self.loop, args=())
         self.thread.start()
 
+        self.no_cbor_warning_shown = False
+
 
     def trie_from_genesis(self):
         genesis_filename = f'./config/{self.profile.name}/genesis.json'
@@ -117,6 +119,9 @@ class ChainWatcher:
 
     # loose pre-filter to reject most tx without more expensive tx deserialization
     def is_possible_tuna_tx(self, tx):
+        if not self.no_cbor_warning_shown and tx is not None and 'cbor' not in tx:
+            self.no_cbor_warning_shown = True
+            self.log(f"\x1b<91merror: tx-object contains no CBOR. Ogmios from v6 on doesn't anymore include CBOR by default, enable it with --include-cbor\x1b<0m")
         try:
             cbor_hex = tx['cbor']
             return self.config.get('POLICY') in cbor_hex and self.config.get('MINT_SCRIPT') in cbor_hex and self.config.get('SPEND_SCRIPT') in cbor_hex

@@ -110,8 +110,13 @@ if AUTO_SPAWN_MINERS:
 # example for multiple miners on consecutive ports: 127.0.0.1:2023-2038
 miners = MinerManager(profile=profile)
 for m in MINERS:
+    if len(m.strip()) < 1:
+        continue
     HOST = m.split(':')[0]
-    port_def = m.split(':')[1]
+    try:
+        port_def = m.split(':')[1]
+    except:
+        port_def = '2023'
     if '-' in port_def:
         ports = list(range(int(port_def.split('-')[0]), int(port_def.split('-')[1])+1))
     else:
@@ -285,7 +290,7 @@ while True:
                         logger(f"\U0001F4B0 {lovelaces_remaining/1000000:.2f} {currency_symbol}, \U0001F41F {tuna_value/1e8:.0f}")
 
                 except:
-                    pass
+                    logger(f"could not estimate time to next solution: LZ={in_lz} DN={in_dn} hash_rate={total_hashrate} epochs={EPOCH_NUMBER}")
 
             if time.monotonic() > last_success_time + GLOBAL_TIMEOUT:
                 logger(f"<x1b[93mno solution found for a long time, terminating<x1b[0m")
