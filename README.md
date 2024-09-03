@@ -3,6 +3,7 @@
 requirements:
 - Python >=3.8
 - **Ogmios 6.6.*, connected to a Cardano node**
+- Ogmios needs **CBOR OUTPUT ENABLED**
 
 tested with local Ogmios/node, demeter should also work
 
