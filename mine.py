@@ -230,18 +230,18 @@ while True:
 
             result = miners.wait()
             if result:
-                nonce = bytes.fromhex(result)
+                try:
+                    nonce = bytes.fromhex(result)
 
-                tsdata = tsdata[:4] + nonce + tsdata[20:]
-                dh = hashlib.sha256(hashlib.sha256(tsdata).digest()).digest()
-                this_lz, this_dn = calc_diff(dh)
-                if this_lz > in_lz or ( this_lz == in_lz and this_dn < in_dn):
-                    logger(f"<x1b[95mMINER: found a solution with {this_lz} {this_dn}, difficulty is {in_lz} {in_dn}<x1b[0m")
-                    found_solution = True
-                    break
-                # can be from race condition when miner sends result and did not get new state yet
-                #else:
-                #    logger(f"<x1b[91mMINER: error {dh.hex()} => {this_lz} {this_dn}, difficulty is {in_lz} {in_dn}<x1b[0m")
+                    tsdata = tsdata[:4] + nonce + tsdata[20:]
+                    dh = hashlib.sha256(hashlib.sha256(tsdata).digest()).digest()
+                    this_lz, this_dn = calc_diff(dh)
+                    if this_lz > in_lz or ( this_lz == in_lz and this_dn < in_dn):
+                        logger(f"<x1b[95mMINER: found a solution with {this_lz} {this_dn}, difficulty is {in_lz} {in_dn}<x1b[0m")
+                        found_solution = True
+                        break
+                except Exception as e:
+                    logger(f"<x1b[91merror: invalid response from miner: {result} => {e}")
             
             stats = miners.get_stats()
 
@@ -419,8 +419,8 @@ while True:
         redeemer_datum_mint = RawPlutusData(CBORTag(122, [CBORTag(121, [CBORTag(121, [bytes.fromhex(contract_in_utxo['transaction']['id'])]), contract_in_utxo['index']]), in_block]))
 
         redeemers = [
-                pycardano.Redeemer(redeemer_datum_spend, ex_units=pycardano.ExecutionUnits(1000000, 500000000)),
-                pycardano.Redeemer(redeemer_datum_mint, ex_units=pycardano.ExecutionUnits(280000, 130000000)),
+                pycardano.Redeemer(redeemer_datum_spend, ex_units=pycardano.ExecutionUnits(900000, 400000000)),
+                pycardano.Redeemer(redeemer_datum_mint, ex_units=pycardano.ExecutionUnits(180000, 90000000)),
                 ]
         redeemers[0].tag = pycardano.plutus.RedeemerTag(0) #SPEND
         redeemers[1].tag = pycardano.plutus.RedeemerTag(1) #MINT
