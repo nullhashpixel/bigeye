@@ -177,10 +177,48 @@ warning: when running the miner on cloud services use only trusted images (walle
 | 4080S   | Linux  | 2.2              |
 | 4070    | Linux  | 1.8              |
 | 3080    | Linux  | 1.7              |
+| 3070    | Linux  | 1.1              |
 | 2080S   | Linux  | 1.1              |
+| A4000   | Linux  | 1.0              |
 | 4060    | Linux  | 0.95             |
 
 performance can vary depending on the exact GPU and PC
+
+# vast.ai template:
+
+Use these template settings to create your own template to mine. (be careful with existing templates, they might contain malware!)
+
+
+````
+Image Path/Tag: ubuntu:20.04
+Version Tag: 20.04
+Docker Options: -p 2023:2023
+Run interactive shell servers, SSH: yes
+Use direct SSH connection...: yes
+On-Start Script: mkdir /workspace && apt install -y clinfo nvidia-opencl-dev
+````
+
+deploy.sh
+````
+#!/bin/bash
+scp -o "StrictHostKeyChecking accept-new" -i {YOUR_SSH_IDENTITY_FILE} -P $2 sha256_opencl.cl cltuna run.sh root@${1}:/workspace
+ssh root@${1} -p ${2} -i {YOUR_SSH_IDENTITY_FILE} -t << EOF
+   tmux kill-session -a
+   tmux new-session -t session1 -d
+   tmux list-sessions
+   tmux send-keys -t session1-0 "cd /workspace; ./run.sh 2023" ENTER
+EOF
+````
+
+use (from miners/gpu directory):
+````
+deploy.sh 12.34.56.78 45678
+````
+important:
+ - the port to be used as argument to `deploy.sh` is the one shown in "IP & Port Info" redirecting to "22/tcp".
+ - the port added to the config.json is the port redirecting to "2023/tcp"
+
+
 
 # Known bugs/limitations
 
