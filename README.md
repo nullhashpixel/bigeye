@@ -212,7 +212,7 @@ EOF
 
 use (from miners/gpu directory):
 ````
-deploy.sh 12.34.56.78 45678
+./deploy.sh 12.34.56.78 45678
 ````
 important:
  - the port to be used as argument to `deploy.sh` is the one shown in "IP & Port Info" redirecting to "22/tcp".
