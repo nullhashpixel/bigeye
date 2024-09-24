@@ -58,11 +58,17 @@ class ChainWatcher:
         self.TUNA_STATE_ASSETNAME_HEX = self.TUNA_STATE_PREFIX_HEX + self.config.get('SPEND_SCRIPT')
         self.TUNA_ASSETNAME_HEX       = self.config.get('TUNA_ASSETNAME').encode('utf-8').hex() 
 
-        self.thread = Thread(target=self.loop, args=())
-        self.thread.start()
-
         self.no_cbor_warning_shown = False
 
+        self.restart()
+
+    def is_alive(self):
+        self.thread.join(timeout=0.0)
+        return self.thread.is_alive()
+
+    def restart(self):
+        self.thread = Thread(target=self.loop, args=())
+        self.thread.start()
 
     def trie_from_genesis(self):
         genesis_filename = f'./config/{self.profile.name}/genesis.json'
@@ -106,6 +112,26 @@ class ChainWatcher:
         return self.ogmios.query(query_name, params=params)
 
     def query_utxos(self):
+        success = False
+        try:
+            self._query_utxos()
+            success = True
+        except Exception as e:
+            self.log(f"<x1b[31merror: could not query utxos: {e}<x1b[0m")
+        if success:
+            return
+
+        try:
+            self.log(f"try reconnecting to Ogmios...")
+            time.sleep(5)
+            self.ogmios  = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config)
+            self._query_utxos()
+            success = True
+        except Exception as e:
+            self.log(f"<x1b[31merror: could not query utxos (failed again): {e}<x1b[0m")
+
+
+    def _query_utxos(self):
         t0 = time.time()
         utxos = self.query('LocalStateQuery', {'addresses': [self.wallet, self.config['CONTRACT_ADDRESS']]})['result']
         if time.time()-t0 > 4:
@@ -132,7 +158,8 @@ class ChainWatcher:
         except:
             return False
 
-    def try_state_update(self, tuna_tx):
+    def try_state_update(self, tuna_tx, tx=None):
+        success = False
         try:
             success = self.state['tuna'].update(tuna_tx)
         except Exception as e:
@@ -152,6 +179,11 @@ class ChainWatcher:
                 self.state['tuna_tx_cbor'] = tuna_tx.cbor
             except:
                 self.state['tuna_tx_cbor'] = None
+
+            try:
+                self.state['tx'] = tx['id']
+            except:
+                pass
 
             try:
                 self.index_state() 
@@ -306,6 +338,7 @@ class ChainWatcher:
             self.query('FindIntersect', {'points': [self.tip]})
 
         last_sync_update = time.monotonic()-1
+        last_sync_slot = -1
         first = True
         while True:
             block_update = self.query('NextBlock')['result']
@@ -315,10 +348,11 @@ class ChainWatcher:
                 block = block_update['block'] 
 
                 if not self.synced:
-                    if time.monotonic() > last_sync_update + 1:
-                        self.log(f"syncing, block height {block['height']}")
+                    if time.monotonic() > last_sync_update + 5:
+                        speed = f"({(block['slot']-last_sync_slot)/(time.monotonic()-last_sync_update):.0f} x)" if last_sync_slot > 0 else ''
+                        self.log(f"syncing, block height {block['height']} {speed}")
                         last_sync_update = time.monotonic()
-
+                        last_sync_slot = block['slot']
 
                 time_now = int(datetime.datetime.now().timestamp())*1000
                 time_now_in_slots = posix_to_slots(time_now, self.config.get('SHELLEY_OFFSET'))
@@ -347,9 +381,7 @@ class ChainWatcher:
                         tuna_tx = self.deserialize_tuna_tx(tx)
                         if tuna_tx:
                             try:
-                                success = self.try_state_update(tuna_tx)
-                                if success:
-                                    self.state['tx'] = tx['id']
+                                success = self.try_state_update(tuna_tx, tx=tx)
                                 new_valid_tuna_state_found = new_valid_tuna_state_found or success
                             except Exception as e:
                                 self.log(f"state update failed: {e}")
@@ -357,7 +389,6 @@ class ChainWatcher:
                             for i,txo in enumerate(tx['outputs']):
                                 if txo['address'] == self.config['CONTRACT_ADDRESS']:
                                     self.state['contract_utxos'] = [{'transaction': {'id': tx['id']}, 'index': i, 'address': self.config['CONTRACT_ADDRESS'], 'value': txo['value']}]
-                                    self.log("updated contract utxos")
 
                             for s_tx in self.submitted_transactions:
                                 if s_tx[0] == tuna_tx.out_block_number:

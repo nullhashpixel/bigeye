@@ -27,7 +27,7 @@ from miners import MinerManager, format_hashrate
 from tuna_tx import *
 
 PROGRAM_NAME         = "bigeye"
-VERSION              = "v0.2.4"
+VERSION              = "v0.2.5"
 
 parser = argparse.ArgumentParser(
                     prog=f'{PROGRAM_NAME} {VERSION}',
@@ -157,8 +157,21 @@ submitted_blocks = []
 last_time_between_blocks_estimation_time = time.monotonic()
 solution_submitted_timeout = -1
 last_success_time = time.monotonic()
+last_alive_check = time.monotonic()
+chain_watcher_restart_attempts = 0
 
 while True:
+
+    if time.monotonic() > last_alive_check + 30:
+        last_alive_check = time.monotonic()
+        if not chain.is_alive():
+            chain_watcher_restart_attempts += 1
+            if chain_watcher_restart_attempts > 20:
+                os._exit(11)
+            logger(f"chain_watcher thread died, restarting... {chain_watcher_restart_attempts}")
+            time.sleep(2)
+            chain.restart()
+
 
     # check for new blocks
     has_block = chain.events['block'].wait(timeout=WAIT_FOR_BLOCKS_S)
@@ -419,8 +432,8 @@ while True:
         redeemer_datum_mint = RawPlutusData(CBORTag(122, [CBORTag(121, [CBORTag(121, [bytes.fromhex(contract_in_utxo['transaction']['id'])]), contract_in_utxo['index']]), in_block]))
 
         redeemers = [
-                pycardano.Redeemer(redeemer_datum_spend, ex_units=pycardano.ExecutionUnits(900000, 400000000)),
-                pycardano.Redeemer(redeemer_datum_mint, ex_units=pycardano.ExecutionUnits(180000, 90000000)),
+                pycardano.Redeemer(redeemer_datum_spend, ex_units=pycardano.ExecutionUnits(1000000, 500000000)),
+                pycardano.Redeemer(redeemer_datum_mint, ex_units=pycardano.ExecutionUnits(280000, 130000000)),
                 ]
         redeemers[0].tag = pycardano.plutus.RedeemerTag(0) #SPEND
         redeemers[1].tag = pycardano.plutus.RedeemerTag(1) #MINT
