@@ -22,6 +22,9 @@ class TunaState:
                     'posix_time': 0,
                     'merkle_root': None,
                     'trie': trie,
+                    'miner': None,
+                    'nonce': None,
+                    'miner_cred_hash': None,
                     }
 
     def get(self, k):
@@ -45,6 +48,9 @@ class TunaState:
                     'posix_time': tuna_tx.out_posix_time,
                     'merkle_root': tuna_tx.out_merkle_root,
                     'trie': new_trie,
+                    'miner': tuna_tx.miner,
+                    'nonce': tuna_tx.nonce,
+                    'miner_cred_hash': tuna_tx.miner_cred_hash,
                     })
             return True
         else:

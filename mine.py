@@ -45,12 +45,16 @@ except Exception as e:
     print(f"failed loading profile: {args.profile}, error: {e}")
     exit(2)
 
+WATCH_ONLY           = config.get('WATCH_ONLY', False)
 
 logger('-'*80)
 logger(f"initialized {PROGRAM_NAME} {VERSION}")
 logger('-'*80)
 logger(f'NETWORK: {config.get("NETWORK")}')
-logger(f'WALLET:  {profile.wallet}')
+if not WATCH_ONLY:
+    logger(f'WALLET:  {profile.wallet}')
+else:
+    logger(f'WATCH-ONLY MODE')
 logger(f'POLICY:  {profile.TUNA_POLICY_HEX}')
 logger('-'*80)
 
@@ -75,55 +79,60 @@ except Exception as e:
     logger(f"<x1b[41merror: could not obtain protocol parameters, is cardano-node running? Error from ogmios: {e}<x1b[0m")
     exit()
 
+if WATCH_ONLY:
+    # don't need this anymore when not submitting, close it to reduce concurrent connections
+    # to allow use of low tier demeter instances
+    ogmios.ws.close()
 
 # watch chain and mempool
 chain   = ChainWatcher(profile=profile)
 mempool = MempoolWatcher(profile=profile)
 
+if not WATCH_ONLY:
+    MINERS = profile.config.get('MINERS', '127.0.0.1:2023').split(',')
 
-MINERS = profile.config.get('MINERS', '127.0.0.1:2023').split(',')
+    # AUTO_SPAWN_MINERS
+    AUTO_SPAWN_MINERS = config.get('AUTO_SPAWN_MINERS', False)
+    miner_processes = []
+    if AUTO_SPAWN_MINERS:
+        MINER_EXECUTABLE = config.get('MINER_EXECUTABLE', "miners/simple/miner_core.py")
+        if shutil.which(MINER_EXECUTABLE) is None:
+            logger(f"<x1b[41merror: miner executable {MINER_EXECUTABLE} not found<x1b[0m")
+            if MINER_EXECUTABLE in ["miners/cpu/cpu-sha256", "./miners/cpu/cpu-sha256"]:
+                logger(f"hint: to build the CPU miner, go to the ./miners/cpu directory and run `make`")
+            os._exit(3)
 
-# AUTO_SPAWN_MINERS
-AUTO_SPAWN_MINERS = config.get('AUTO_SPAWN_MINERS', False)
-miner_processes = []
-if AUTO_SPAWN_MINERS:
-    MINER_EXECUTABLE = config.get('MINER_EXECUTABLE', "miners/simple/miner_core.py")
-    if shutil.which(MINER_EXECUTABLE) is None:
-        logger(f"<x1b[41merror: miner executable {MINER_EXECUTABLE} not found<x1b[0m")
-        if MINER_EXECUTABLE in ["miners/cpu/cpu-sha256", "./miners/cpu/cpu-sha256"]:
-            logger(f"hint: to build the CPU miner, go to the ./miners/cpu directory and run `make`")
-        os._exit(3)
+        for m in MINERS:
+            HOST = m.split(':')[0]
+            port_def = m.split(':')[1]
+            if '-' in port_def:
+                ports = list(range(int(port_def.split('-')[0]), int(port_def.split('-')[1])+1))
+            else:
+                ports = [int(port_def)]
+            for PORT in ports:
+                # only localhost allowed
+                miner_processes.append(subprocess.Popen([MINER_EXECUTABLE, str(PORT)], stdout=subprocess.DEVNULL))
+                logger(f"spawned a new miner process :{str(PORT)}, now running {len(miner_processes)}")
 
+
+# example for multiple miners on consecutive ports: 127.0.0.1:2023-2038
+miners = MinerManager(profile=profile)
+if not WATCH_ONLY:
     for m in MINERS:
+        if len(m.strip()) < 1:
+            continue
         HOST = m.split(':')[0]
-        port_def = m.split(':')[1]
+        try:
+            port_def = m.split(':')[1]
+        except:
+            port_def = '2023'
         if '-' in port_def:
             ports = list(range(int(port_def.split('-')[0]), int(port_def.split('-')[1])+1))
         else:
             ports = [int(port_def)]
         for PORT in ports:
-            # only localhost allowed
-            miner_processes.append(subprocess.Popen([MINER_EXECUTABLE, str(PORT)], stdout=subprocess.DEVNULL))
-            logger(f"spawned a new miner process :{str(PORT)}, now running {len(miner_processes)}")
-
-
-# example for multiple miners on consecutive ports: 127.0.0.1:2023-2038
-miners = MinerManager(profile=profile)
-for m in MINERS:
-    if len(m.strip()) < 1:
-        continue
-    HOST = m.split(':')[0]
-    try:
-        port_def = m.split(':')[1]
-    except:
-        port_def = '2023'
-    if '-' in port_def:
-        ports = list(range(int(port_def.split('-')[0]), int(port_def.split('-')[1])+1))
-    else:
-        ports = [int(port_def)]
-    for PORT in ports:
-        miners.add(config={'HOST': HOST, 'PORT': PORT})
-logger(f"initialized {len(miners)} miners.")
+            miners.add(config={'HOST': HOST, 'PORT': PORT})
+    logger(f"initialized {len(miners)} miners.")
 
 VERSION_INFO         = f"{PROGRAM_NAME} {VERSION}"
 TUNA_POLICY          = profile.TUNA_POLICY_HEX
@@ -262,10 +271,11 @@ while True:
             active_miners  = sum(1 if s['rate'] > 0 else 0 for k,s in stats.items())
             total_hashrate = sum(s['rate'] for k,s in stats.items())
 
-            if active_miners < n_miners:
-                logger(f"\U0001F3A3 total fishing rate: {format_hashrate(total_hashrate)} <x1b[41mactive: {active_miners}/{n_miners}<x1b[0m")
-            else:
-                logger(f"\U0001F3A3 total fishing rate: {format_hashrate(total_hashrate)} active: {active_miners}/{n_miners}")
+            if not WATCH_ONLY:
+                if active_miners < n_miners:
+                    logger(f"\U0001F3A3 total fishing rate: {format_hashrate(total_hashrate)} <x1b[41mactive: {active_miners}/{n_miners}<x1b[0m")
+                else:
+                    logger(f"\U0001F3A3 total fishing rate: {format_hashrate(total_hashrate)} active: {active_miners}/{n_miners}")
 
             # expected time to find solution estimate and difficulty change prediction
             if time.monotonic() > last_time_between_blocks_estimation_time + 120:
@@ -273,6 +283,12 @@ while True:
                 try:
                     n_hashes_per_solution = 16**in_lz * (65536/in_dn)
                     seconds_between_blocks = n_hashes_per_solution / total_hashrate
+                    logger(f"\u23F1  estimated time to next solution: <x1b[92m{format_seconds(seconds_between_blocks)}<x1b[0m.")
+                except:
+                    if not WATCH_ONLY:
+                        logger(f"could not estimate time to next solution: LZ={in_lz} DN={in_dn} hash_rate={total_hashrate} epochs={EPOCH_NUMBER}")
+
+                try:
                     next_diff_change = EPOCH_NUMBER - (in_block % EPOCH_NUMBER)
                     expected_block_time = EPOCH_TARGET / EPOCH_NUMBER
                     direction = '??'
@@ -288,22 +304,22 @@ while True:
                                 direction = f'up {factor:.1f}x in {format_seconds(time_remaining)}'
                     except:
                         pass
-                    logger(f"\u23F1  estimated time to next solution: <x1b[92m{format_seconds(seconds_between_blocks)}<x1b[0m.")
                     logger(f"\U0001F41F at height {in_block}: LZ={in_lz} DN={in_dn}, next difficulty change in {next_diff_change} blocks, expected direction: {direction}")
                     logger(f"\u26D3  Cardano at slot: {slot}")
 
-                    lovelaces_remaining = lovelace_value_from_utxos(state[use_state]['wallet_utxos'])
-                    currency_symbol = "\u20B3" if config.get('NETWORK', 'MAINNET').upper() == 'MAINNET' else "t\u20B3"
+                    if not WATCH_ONLY:
+                        lovelaces_remaining = lovelace_value_from_utxos(state[use_state]['wallet_utxos'])
+                        currency_symbol = "\u20B3" if config.get('NETWORK', 'MAINNET').upper() == 'MAINNET' else "t\u20B3"
 
-                    tuna_value = token_value_from_utxos(state[use_state]['wallet_utxos'], TUNA_POLICY, TUNA_ASSETNAME)
+                        tuna_value = token_value_from_utxos(state[use_state]['wallet_utxos'], TUNA_POLICY, TUNA_ASSETNAME)
 
-                    if lovelaces_remaining < 25000000:
-                        logger(f"\U0001F4B0 <x1b[93m{lovelaces_remaining/1000000:.2f} {currency_symbol} wallet balance low!<x1b[0m , \U0001F41F {tuna_value/1e8:.0f}")
-                    else:
-                        logger(f"\U0001F4B0 {lovelaces_remaining/1000000:.2f} {currency_symbol}, \U0001F41F {tuna_value/1e8:.0f}")
+                        if lovelaces_remaining < 25000000:
+                            logger(f"\U0001F4B0 <x1b[93m{lovelaces_remaining/1000000:.2f} {currency_symbol} wallet balance low!<x1b[0m , \U0001F41F {tuna_value/1e8:.0f}")
+                        else:
+                            logger(f"\U0001F4B0 {lovelaces_remaining/1000000:.2f} {currency_symbol}, \U0001F41F {tuna_value/1e8:.0f}")
 
                 except:
-                    logger(f"could not estimate time to next solution: LZ={in_lz} DN={in_dn} hash_rate={total_hashrate} epochs={EPOCH_NUMBER}")
+                    logger(f"could not compute next difficulty change: LZ={in_lz} DN={in_dn} hash_rate={total_hashrate} epochs={EPOCH_NUMBER}")
 
             if time.monotonic() > last_success_time + GLOBAL_TIMEOUT:
                 logger(f"<x1b[93mno solution found for a long time, terminating<x1b[0m")

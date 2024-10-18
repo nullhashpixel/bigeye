@@ -2,22 +2,9 @@
 import os
 
 import pycardano
+from hashlib import blake2b
 from cardano_helpers import *
 
-'''
-class TargetState(pycardano.CBORSerializable):
-    def __init__(self, nonce, block_number, epoch_time, current_hash, leading_zeros, target_number, miner_hash):
-        self.nonce = nonce
-        self.block_number = block_number
-        self.epoch_time = epoch_time
-        self.current_hash = current_hash
-        self.leading_zeros = leading_zeros
-        self.target_number = target_number
-        self.miner_hash = miner_hash
-
-    def to_primitive(self):
-        return [self.nonce, self.block_number, self.epoch_time, self.current_hash, self.leading_zeros, self.target_number, self.miner_hash]
-'''
 
 class TunaTxStatus:
     UNCONFIRMED = 0
@@ -91,14 +78,11 @@ class TunaTx:
             #raise Exception("reference scripts not found")
             pass
 
-        #print("script idxs:", self.mint_script_idx, self.spend_script_idx)
-        #print("redeemrs:", self.redeemers)
         for i,r in enumerate(self.redeemers):
             if r.tag == pycardano.plutus.RedeemerTag.MINT:
                 self.mint_script_idx = i
             if r.tag == pycardano.plutus.RedeemerTag.SPEND:
                 self.spend_script_idx = i
-        #print("script idxs:", self.mint_script_idx, self.spend_script_idx)
 
         try:
             self.mint_redeemer  = self.redeemers[self.mint_script_idx]
@@ -106,35 +90,33 @@ class TunaTx:
         except:
             self.mint_redeemer  = None
             self.spend_redeemer = None
-
-        #print("mint redeemer:", self.mint_redeemer)
-        #print("spend redeemer:", self.spend_redeemer)
+            self.miner_cred = None
 
         try:
-            #print("mint redeemer:", self.mint_redeemer.data.to_dict())
             mint_redeemer_dict = self.mint_redeemer.data.to_dict()
             self.current_block = mint_redeemer_dict['fields'][1]['int']
         except:
             self.current_block = -1
 
         try:
-            #print("spend redeemer:", self.spend_redeemer.data.to_dict())
             spend_redeemer_dict = self.spend_redeemer.data.to_dict()
             self.nonce = spend_redeemer_dict['fields'][0]['bytes']
-            self.miner = spend_redeemer_dict['fields'][1]['fields']
-            proof_fields = spend_redeemer_dict['fields'][2]['list']
-            self.proof = b''.join([ bytes.fromhex(proof_fields[x]['fields'][1]['bytes']) for x in range(len(proof_fields)) ]).hex()
-        except:
+            self.miner = spend_redeemer_dict['fields'][1]['fields'][0]['bytes']
+            self.miner_cred = pycardano.plutus.RawPlutusData.from_dict(spend_redeemer_dict['fields'][1]).to_cbor()
+            self.miner_cred_hash = blake2b(self.miner_cred, digest_size=32).digest().hex()
+        except Exception as e:
+            print("Error during tuna tx decoding:", e)
             self.nonce = None
             self.miner = None
             self.proof = None
+            self.miner_cred = None
+            self.miner_cred_hash = None
 
         self.tuna_out_datum = None
         tx_matches = False
         for tx_output in self.tx.transaction_body.outputs:
 
             assets_with_tuna_policy = get_assets_with_policy(tx_output, self.config['POLICY'])
-            #print("assets:", assets_with_tuna_policy)
 
             has_tuna_state   = any([x.startswith(self.TUNA_STATE_PREFIX_HEX) for x in assets_with_tuna_policy.keys()])
             has_tuna_counter = any([x.startswith(self.TUNA_COUNTER_PREFIX_HEX) for x in assets_with_tuna_policy.keys()])
@@ -171,7 +153,6 @@ class TunaTx:
         print("HEIGHT=", self.current_block)
         print("NONCE=", self.nonce)
         print("MINER=", self.miner)
-        print("PROOF=", self.proof)
         print("OUT_DATUM=", self.tuna_out_datum.to_dict())
         print("OUT_BLOCK_NUMBER=", self.out_block_number)
         print("OUT_HASH=", self.out_current_hash)

@@ -155,7 +155,8 @@ class ChainWatcher:
         try:
             cbor_hex = tx['cbor']
             return self.config.get('POLICY') in cbor_hex and self.config.get('MINT_SCRIPT') in cbor_hex and self.config.get('SPEND_SCRIPT') in cbor_hex
-        except:
+        except Exception as e:
+            print(e)
             return False
 
     def try_state_update(self, tuna_tx, tx=None):
@@ -204,7 +205,7 @@ class ChainWatcher:
                 'id': self.synced_tip['id'],
                 'tx': self.state['tx'],
                 }
-        tuna_state_columns = ['block', 'hash', 'lz', 'dn', 'epoch', 'posix_time', 'merkle_root']
+        tuna_state_columns = ['block', 'hash', 'lz', 'dn', 'epoch', 'posix_time', 'merkle_root', 'miner', 'nonce', 'miner_cred_hash']
         for c in tuna_state_columns:
             record['tuna_' + c] = self.state['tuna'].state.get(c)
 
@@ -269,7 +270,7 @@ class ChainWatcher:
 
     def loop(self):
 
-        self.db = ChainIndex(self.profile.profile_dir)
+        self.db = ChainIndex(self.profile, self)
         self.log(f"chain indexer initialized: {self.db}")
 
         self.network_tip = self.query('QueryNetworkTip')['result']
