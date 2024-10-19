@@ -104,6 +104,10 @@ class TunaTx:
             self.miner = spend_redeemer_dict['fields'][1]['fields'][0]['bytes']
             self.miner_cred = pycardano.plutus.RawPlutusData.from_dict(spend_redeemer_dict['fields'][1]).to_cbor()
             self.miner_cred_hash = blake2b(self.miner_cred, digest_size=32).digest().hex()
+            try:
+                self.miner_data = spend_redeemer_dict['fields'][1]['fields'][1]['bytes']
+            except:
+                self.miner_data = ''
         except Exception as e:
             print("Error during tuna tx decoding:", e)
             self.nonce = None
@@ -111,6 +115,8 @@ class TunaTx:
             self.proof = None
             self.miner_cred = None
             self.miner_cred_hash = None
+            self.miner_data = None
+
 
         self.tuna_out_datum = None
         tx_matches = False

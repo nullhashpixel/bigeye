@@ -8,6 +8,7 @@ import time
 
 try:
     from flask import Flask
+    from flask import request
 except:
     pass
 
@@ -73,6 +74,33 @@ class ChainIndex:
                     result['error'] = 'error'
                 print(f"took {time.time()-t0} seconds")
                 return json.dumps(result)
+
+            @app.route("/blocks")
+            def api_blocks():
+                result = {}
+                db = sqlite3.connect(db_filename)
+                db.row_factory = sqlite3.Row
+                cur = db.cursor()
+                try:
+                    start_block = int(request.args.get('s') or -1)
+                    direction = int(request.args.get('d') or 0)
+                    columns = "block,slot,id,tx,tuna_block,tuna_hash,tuna_lz,tuna_dn,tuna_epoch,tuna_posix_time,tuna_merkle_root,tuna_miner,tuna_miner_cred_hash,tuna_miner_data"
+                    if direction == 1:
+                        if start_block < 1:
+                            cur.execute(f"SELECT {columns} FROM chain ORDER BY tuna_block ASC LIMIT 10;")
+                        else:
+                            cur.execute(f"SELECT {columns} FROM chain WHERE tuna_block > :tuna_block ORDER BY tuna_block ASC LIMIT 10;", {"tuna_block": start_block})
+                    else:
+                        if start_block < 1:
+                            cur.execute(f"SELECT {columns} FROM chain ORDER BY tuna_block DESC LIMIT 10;")
+                        else:
+                            cur.execute(f"SELECT {columns} FROM chain WHERE tuna_block < :tuna_block ORDER BY tuna_block DESC LIMIT 10;", {"tuna_block": start_block})
+                    result['result'] = [dict(x) for x in cur.fetchall()]
+                except Exception as e:
+                    print(e)
+                    result['error'] = 'error'
+                db.close()
+                return result
 
             @app.route("/proof/<data>")
             def api_proof(data):
@@ -149,6 +177,11 @@ class ChainIndex:
         except:
             pass
 
+        try:
+            self.cur.execute('ALTER TABLE chain ADD COLUMN tuna_miner_data TEXT;')
+        except:
+            pass
+
     def get_tuna_block(self, tuna_block):
         self.cur.execute("SELECT block FROM chain WHERE tuna_block = ?", (tuna_block,))
         results = self.cur.fetchone()
@@ -164,8 +197,8 @@ class ChainIndex:
             print("TODO: handle rollbacks")
             os._exit(17)
 
-        self.cur.execute("""INSERT INTO chain (block, slot, id, tx, tuna_block, tuna_hash, tuna_lz, tuna_dn, tuna_epoch, tuna_posix_time, tuna_merkle_root, cbor, tuna_miner, tuna_nonce, tuna_miner_cred_hash)
-                            VALUES (:block, :slot, :id, :tx, :tuna_block, :tuna_hash, :tuna_lz, :tuna_dn, :tuna_epoch, :tuna_posix_time, :tuna_merkle_root, :cbor, :tuna_miner, :tuna_nonce, :tuna_miner_cred_hash);""", record);
+        self.cur.execute("""INSERT INTO chain (block, slot, id, tx, tuna_block, tuna_hash, tuna_lz, tuna_dn, tuna_epoch, tuna_posix_time, tuna_merkle_root, cbor, tuna_miner, tuna_nonce, tuna_miner_cred_hash, tuna_miner_data)
+                            VALUES (:block, :slot, :id, :tx, :tuna_block, :tuna_hash, :tuna_lz, :tuna_dn, :tuna_epoch, :tuna_posix_time, :tuna_merkle_root, :cbor, :tuna_miner, :tuna_nonce, :tuna_miner_cred_hash, :tuna_miner_data);""", record);
         self.con.commit()
 
     def __repr__(self):

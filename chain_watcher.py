@@ -199,13 +199,15 @@ class ChainWatcher:
         return success
 
     def index_state(self):
+        # Cardano state
         record = {
                 'block': self.synced_tip['height'],
                 'slot': self.synced_tip['slot'],
                 'id': self.synced_tip['id'],
                 'tx': self.state['tx'],
                 }
-        tuna_state_columns = ['block', 'hash', 'lz', 'dn', 'epoch', 'posix_time', 'merkle_root', 'miner', 'nonce', 'miner_cred_hash']
+        # TUNA state with prefix 'tuna_'
+        tuna_state_columns = ['block', 'hash', 'lz', 'dn', 'epoch', 'posix_time', 'merkle_root', 'miner', 'nonce', 'miner_cred_hash', 'miner_data']
         for c in tuna_state_columns:
             record['tuna_' + c] = self.state['tuna'].state.get(c)
 

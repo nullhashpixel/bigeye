@@ -25,6 +25,7 @@ class TunaState:
                     'miner': None,
                     'nonce': None,
                     'miner_cred_hash': None,
+                    'miner_data': None,
                     }
 
     def get(self, k):
@@ -51,6 +52,7 @@ class TunaState:
                     'miner': tuna_tx.miner,
                     'nonce': tuna_tx.nonce,
                     'miner_cred_hash': tuna_tx.miner_cred_hash,
+                    'miner_data': tuna_tx.miner_data,
                     })
             return True
         else:
