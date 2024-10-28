@@ -3,7 +3,7 @@ import cbor2
 import time
 import copy
 import sys, traceback
-from ogmios import Ogmios
+from ogmios_connection import OgmiosConnection
 from websockets.sync.client import connect
 from threading import Thread, Event
 from time import sleep
@@ -16,12 +16,16 @@ from tuna_state import TunaState
 from tuna_tx import *
 
 class MempoolWatcher:
-    def __init__(self, profile):
+    def __init__(self, profile, ogmios_connection=None):
         self.profile = profile
         self.config = self.profile.config
         self.wallet = self.profile.wallet
         self.log = self.profile.log 
-        self.ogmios = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
+
+        if self.config.get('OGMIOS_SHARED_CONNECTION') and ogmios_connection is not None:
+            self.ogmios = ogmios_connection
+        else:
+            self.ogmios = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
         self.running = False
         self.TUNA_STATE_PREFIX_HEX   = self.config.get('TUNA_STATE_PREFIX', 'TUNA').encode('utf-8').hex()
         self.TUNA_COUNTER_PREFIX_HEX = self.config.get('TUNA_COUNTER_PREFIX','COUNTER').encode('utf-8').hex()

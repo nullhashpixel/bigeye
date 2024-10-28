@@ -17,7 +17,7 @@ import shutil
 from pycardano.plutus import CBORTag
 from pycardano.plutus import RawPlutusData
 
-from ogmios import Ogmios
+from ogmios_connection import OgmiosConnection
 from chain_watcher import ChainWatcher
 from mempool_watcher import MempoolWatcher
 from config_profile import Profile
@@ -61,10 +61,10 @@ logger('-'*80)
 # ogmios for tx submission
 
 OGMIOS_URL = config.get('OGMIOS', 'ws://0.0.0.0:1337')
-ogmios = None
-while ogmios is None:
+ogmios_connection = None
+while ogmios_connection is None:
     try:
-        ogmios = Ogmios(OGMIOS_URL, config=config)
+        ogmios_connection = OgmiosConnection(OGMIOS_URL, config=config)
     except Exception as e:
         logger(f"<x1b[91merror: failed to connect to ogmios @{OGMIOS_URL}: {e}")
         time.sleep(5)
@@ -73,7 +73,7 @@ logger(f"connected to ogmios@{OGMIOS_URL}")
 
 # protocol parameters
 try:
-    protocol_parameters = ogmios.query('ProtocolParameters')
+    protocol_parameters = ogmios_connection.query('ProtocolParameters')
     PLUTUS_V2_COST_MODEL = {i: v for i,v in enumerate(protocol_parameters['result']['plutusCostModels']['plutus:v2'])}
 except Exception as e:
     logger(f"<x1b[41merror: could not obtain protocol parameters, is cardano-node running? Error from ogmios: {e}<x1b[0m")
@@ -82,11 +82,11 @@ except Exception as e:
 if WATCH_ONLY:
     # don't need this anymore when not submitting, close it to reduce concurrent connections
     # to allow use of low tier demeter instances
-    ogmios.ws.close()
+    ogmios_connection.close()
 
 # watch chain and mempool
-chain   = ChainWatcher(profile=profile)
-mempool = MempoolWatcher(profile=profile)
+chain   = ChainWatcher(profile=profile, ogmios_connection=ogmios_connection)
+mempool = MempoolWatcher(profile=profile, ogmios_connection=ogmios_connection)
 
 if not WATCH_ONLY:
     MINERS = profile.config.get('MINERS', '127.0.0.1:2023').split(',')
@@ -515,7 +515,7 @@ while True:
 
         # SUBMISSION
         tx_cbor = tx.to_cbor().hex()
-        result = ogmios.query('SubmitTransaction', {'transaction': {'cbor': tx_cbor}})
+        result = ogmios_connection.query('SubmitTransaction', {'transaction': {'cbor': tx_cbor}})
 
         try:
             validity_interval_pos = (slot - validity_start)/(ttl - validity_start)

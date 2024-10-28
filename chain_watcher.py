@@ -7,7 +7,7 @@ import time
 import copy
 import sys, traceback
 
-from ogmios import Ogmios
+from ogmios_connection import OgmiosConnection
 from threading import Thread, Event
 from time import sleep
 import copy
@@ -27,12 +27,15 @@ def slots_to_posix(slots, shelley_offset=1666656000):
     return (slots + shelley_offset)*1000
 
 class ChainWatcher:
-    def __init__(self, profile):
+    def __init__(self, profile, ogmios_connection=None):
         self.profile = profile
         self.config  = self.profile.config
         self.log     = self.profile.log
         self.wallet  = self.profile.wallet
-        self.ogmios  = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
+        if self.config.get('OGMIOS_SHARED_CONNECTION') and ogmios_connection is not None:
+            self.ogmios = ogmios_connection
+        else:
+            self.ogmios = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
         self.synced_with_time = False
         self.tx_debug = False
         self.submitted_transactions = []
