@@ -35,7 +35,7 @@ class ChainWatcher:
         if self.config.get('OGMIOS_SHARED_CONNECTION') and ogmios_connection is not None:
             self.ogmios = ogmios_connection
         else:
-            self.ogmios = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
+            self.ogmios = OgmiosConnection(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
         self.synced_with_time = False
         self.tx_debug = False
         self.submitted_transactions = []

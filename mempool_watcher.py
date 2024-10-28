@@ -25,7 +25,7 @@ class MempoolWatcher:
         if self.config.get('OGMIOS_SHARED_CONNECTION') and ogmios_connection is not None:
             self.ogmios = ogmios_connection
         else:
-            self.ogmios = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
+            self.ogmios = OgmiosConnection(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config) 
         self.running = False
         self.TUNA_STATE_PREFIX_HEX   = self.config.get('TUNA_STATE_PREFIX', 'TUNA').encode('utf-8').hex()
         self.TUNA_COUNTER_PREFIX_HEX = self.config.get('TUNA_COUNTER_PREFIX','COUNTER').encode('utf-8').hex()
