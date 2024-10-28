@@ -153,9 +153,12 @@ to mine.
 
 this disables SSL certificate validation, only use if you know what you're doing!
 
+**If you are on the free tier of demeter, also set "OGMIOS_SHARED_CONNECTION": true**
+
 ````
     "OGMIOS": "wss://dmtr_ogmios1{rest_of_your_api_key}.mainnet-v6.ogmios-m1.demeter.run",
     "OGMIOS_DISABLE_CERTIFICATE_CHECK": true,
+    "OGMIOS_SHARED_CONNECTION": true,
 ````
 
 # docker
