@@ -5,6 +5,7 @@ import sqlite3
 import threading
 import json
 import time
+import string
 
 try:
     from flask import Flask
@@ -119,6 +120,37 @@ class ChainIndex:
                     result['error'] = 'proof error'
                 print(f"took {time.time()-t0} seconds")
                 return json.dumps(result)
+
+            @app.route("/tx_cbor/<txid>")
+            def txcbor(txid):
+                result = {}
+                try:
+                    db = sqlite3.connect(db_filename)
+                    db.row_factory = sqlite3.Row
+                    cur = db.cursor()
+                except Exception as e:
+                    result['error'] = 'db error'
+                    return result
+
+                if len(txid) != 64:
+                    result['error'] = 'invalid tx id'
+                    return result
+
+                txid = txid.lower()
+
+                if not all(c in string.hexdigits for c in txid):
+                    result['error'] = 'invalid tx id'
+                    return result
+
+                try:
+                    cur.execute(f"SELECT cbor FROM chain WHERE tx = :txid LIMIT 1;", {"txid": txid})
+                    row = cur.fetchone()
+                    result['result'] = row['cbor'].hex()
+                    db.close()
+                    return result
+                except:
+                    result['error'] = 'db error'
+                    return result
 
 
             if ':' in self.config.get('CHAIN_STATE_WEBSERVER'):
