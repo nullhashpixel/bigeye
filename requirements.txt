@@ -1,4 +1,4 @@
 websocket-client==1.5.1
-websockets==12.0
-pycardano==0.11.1
+websockets==13.0
+pycardano==0.12.0
 flask==3.0.3
