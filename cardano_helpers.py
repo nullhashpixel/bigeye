@@ -1,6 +1,18 @@
+from contextlib import contextmanager
+import sys, os
 import pycardano
 import datetime
 import json
+
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:  
+            yield
+        finally:
+            sys.stdout = old_stdout
 
 def get_assets_with_policy(output, policy_id_hex):
     assets = output.amount.multi_asset.get(pycardano.hash.ScriptHash(bytes.fromhex(policy_id_hex)))

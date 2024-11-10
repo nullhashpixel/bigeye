@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
-
+import sys
+import traceback
 import pycardano
 from hashlib import blake2b
 from cardano_helpers import *
@@ -78,19 +79,24 @@ class TunaTx:
             #raise Exception("reference scripts not found")
             pass
 
-        for i,r in enumerate(self.redeemers):
-            if r.tag == pycardano.plutus.RedeemerTag.MINT:
-                self.mint_script_idx = i
-            if r.tag == pycardano.plutus.RedeemerTag.SPEND:
-                self.spend_script_idx = i
+        if isinstance(self.redeemers, pycardano.plutus.RedeemerMap):
+            for k,v in self.redeemers.items():
+                if k.tag == pycardano.plutus.RedeemerTag.SPEND:
+                    self.spend_redeemer = v
+                elif k.tag == pycardano.plutus.RedeemerTag.MINT:
+                    self.mint_redeemer = v
+            spend_redeemer_dict = pycardano.plutus.RawPlutusData(self.spend_redeemer.data).to_dict()
 
-        try:
-            self.mint_redeemer  = self.redeemers[self.mint_script_idx]
-            self.spend_redeemer = self.redeemers[self.spend_script_idx]
-        except:
-            self.mint_redeemer  = None
-            self.spend_redeemer = None
-            self.miner_cred = None
+        else:
+            for i,r in enumerate(self.redeemers):
+                if r.tag == pycardano.plutus.RedeemerTag.MINT:
+                    self.mint_script_idx = i
+                    self.mint_redeemer = r
+                if r.tag == pycardano.plutus.RedeemerTag.SPEND:
+                    self.spend_script_idx = i
+                    self.spend_redeemer = r
+
+            spend_redeemer_dict = self.spend_redeemer.data.to_dict()
 
         try:
             mint_redeemer_dict = self.mint_redeemer.data.to_dict()
@@ -99,7 +105,6 @@ class TunaTx:
             self.current_block = -1
 
         try:
-            spend_redeemer_dict = self.spend_redeemer.data.to_dict()
             self.nonce = spend_redeemer_dict['fields'][0]['bytes']
             self.miner = spend_redeemer_dict['fields'][1]['fields'][0]['bytes']
             self.miner_cred = pycardano.plutus.RawPlutusData.from_dict(spend_redeemer_dict['fields'][1]).to_cbor()
@@ -116,6 +121,7 @@ class TunaTx:
             self.miner_cred = None
             self.miner_cred_hash = None
             self.miner_data = None
+            traceback.print_tb(e.__traceback__, limit=1, file=sys.stdout)
 
 
         self.tuna_out_datum = None

@@ -27,7 +27,7 @@ from miners import MinerManager, format_hashrate
 from tuna_tx import *
 
 PROGRAM_NAME         = "bigeye"
-VERSION              = "v0.3.1"
+VERSION              = "v0.4.0"
 
 parser = argparse.ArgumentParser(
                     prog=f'{PROGRAM_NAME} {VERSION}',
@@ -151,6 +151,16 @@ POSIX_TIME_DELTA     = config.get('POSIX_TIME_DELTA', 91000)
 MAX_WAIT_UNTIL_VALID_SECONDS = config.get('MAX_WAIT_UNTIL_VALID_SECONDS', 90)
 GLOBAL_TIMEOUT       = config.get('GLOBAL_TIMEOUT', 999*356*86400)
 
+NETWORK = pycardano.Network.MAINNET if 'mainnet' in config.get('NETWORK','').lower() else pycardano.Network.TESTNET
+
+USE_TX_BUILDER = not config.get('USE_LEGACY_TX_BUILDING', False)
+if config.get('OGMIOS_SHARED_CONNECTION') and USE_TX_BUILDER:
+    logger(f"OGMIOS_SHARED_CONNECTION requires USE_LEGACY_TX_BUILDING = True")
+    USE_TX_BUILDER = False
+
+if USE_TX_BUILDER:
+    context = pycardano.backend.ogmios_v6.OgmiosChainContext(OGMIOS_URL.rsplit(':',1)[0].split('//')[1], int(OGMIOS_URL.rsplit(':',1)[1]), False, network=NETWORK)
+
 WAIT_FOR_BLOCKS_S  = 0.1
 WAIT_FOR_MEMPOOL_S = 0.1
 
@@ -168,6 +178,7 @@ solution_submitted_timeout = -1
 last_success_time = time.monotonic()
 last_alive_check = time.monotonic()
 chain_watcher_restart_attempts = 0
+
 
 while True:
 
@@ -372,13 +383,15 @@ while True:
 
         # INPUTS --------------------------------------------------------------------------------------------------------------
         tx_inputs = []
-        tx_inputs.append(tx_input_from_utxo(contract_in_utxo))
+        if not USE_TX_BUILDER:
+            tx_inputs.append(tx_input_from_utxo(contract_in_utxo))
         tx_inputs.append(tx_input_from_utxo(own_input_utxo))
 
         # redeemer index
         tx_input_list = [[str(x.transaction_id), x.index] for x in tx_inputs]
         tx_input_list.sort()
-        contract_input_index = tx_input_list.index([str(contract_in_utxo['transaction']['id']), contract_in_utxo['index']])
+        if not USE_TX_BUILDER:
+            contract_input_index = tx_input_list.index([str(contract_in_utxo['transaction']['id']), contract_in_utxo['index']])
 
         # COLLATERAL ----------------------------------------------------------------------------------------------------------
         total_collateral     = 5000000
@@ -440,7 +453,10 @@ while True:
         if additional_lovelaces_to_contract > 0:
             additional_lovelaces_to_contract = 0
 
-        tx_outputs.append(own_output)
+        # only add output if not built with tx builder
+        if not USE_TX_BUILDER:
+            tx_outputs.append(own_output)
+
         tx_outputs.append(contract_output)
 
         # REDEEMERS -------------------------------------------------------------------------------------------------------------
@@ -448,13 +464,15 @@ while True:
         redeemer_datum_mint = RawPlutusData(CBORTag(122, [CBORTag(121, [CBORTag(121, [bytes.fromhex(contract_in_utxo['transaction']['id'])]), contract_in_utxo['index']]), in_block]))
 
         redeemers = [
+                # when USE_TX_BUILDER is set, ex unit values will be computed later
                 pycardano.Redeemer(redeemer_datum_spend, ex_units=pycardano.ExecutionUnits(1000000, 500000000)),
                 pycardano.Redeemer(redeemer_datum_mint, ex_units=pycardano.ExecutionUnits(280000, 130000000)),
                 ]
         redeemers[0].tag = pycardano.plutus.RedeemerTag(0) #SPEND
         redeemers[1].tag = pycardano.plutus.RedeemerTag(1) #MINT
-        redeemers[0].index = contract_input_index 
-        redeemers[1].index = 0
+        if not USE_TX_BUILDER:
+            redeemers[0].index = contract_input_index
+            redeemers[1].index = 0
 
         # SCRIPT DATA HASH ------------------------------------------------------------------------------------------------------
         cost_models      = pycardano.plutus.CostModels({1: PLUTUS_V2_COST_MODEL})
@@ -464,37 +482,78 @@ while True:
         validity_start = posix_to_slots(out_posix_time, config.get('SHELLEY_OFFSET')) - 90
         ttl            = posix_to_slots(out_posix_time, config.get('SHELLEY_OFFSET')) + 90
 
+        if USE_TX_BUILDER:
+            tx_builder = pycardano.txbuilder.TransactionBuilder(context)
+            tx_builder.use_redeemer_map = False
 
-        # BODY
-        tx_body = pycardano.TransactionBody(
-                inputs=tx_inputs,
-                outputs=tx_outputs,
-                mint=mint,
-                fee=tx_fee,
-                reference_inputs=reference_inputs,
-                collateral=collateral,
-                validity_start=validity_start,
-                ttl=ttl,
-                script_data_hash=script_data_hash,
-                total_collateral=total_collateral,
-                collateral_return=collateral_return,
-                required_signers=[WALLET_VKEY.hash()],
-                )
+            for utxo in tx_inputs:
+                tx_builder.add_input(context.utxo_by_tx_id(str(utxo.transaction_id), utxo.index))
+            for output in tx_outputs:
+                tx_builder.add_output(output)
 
-        # WITNESS
-        tx_hash = tx_body.hash()
-        signature = WALLET_SKEY.sign(tx_hash)
-        vkey_witness = pycardano.witness.VerificationKeyWitness(WALLET_VKEY, signature)
-        transaction_witness_set = pycardano.witness.TransactionWitnessSet(
-                vkey_witnesses=[vkey_witness],
-                redeemer=redeemers,
-                )
+            # pycardano emits many warnings for context.utxo_by_tx_id used with plutus V2 scripts, suppress them
+            with suppress_stdout():
+                tx_builder.add_script_input(utxo=context.utxo_by_tx_id(str(contract_in_utxo['transaction']['id']), contract_in_utxo['index']), script=context.utxo_by_tx_id(str(reference_inputs[0].transaction_id), reference_inputs[0].index), redeemer=redeemers[0])
+                tx_builder.add_minting_script(script=context.utxo_by_tx_id(str(reference_inputs[1].transaction_id), reference_inputs[1].index), redeemer=redeemers[1])
 
-        # TRANSACTION
-        tx = pycardano.transaction.Transaction(
-                transaction_body=tx_body,
-                transaction_witness_set=transaction_witness_set
-                )
+            tx_builder.mint = mint
+            tx_builder.ttl = ttl
+            tx_builder.validity_start = validity_start
+            tx_builder.fee_buffer = 1000
+            tx_builder.execution_memory_buffer = 0.03
+            tx_builder.execution_step_buffer = 0.03
+            signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=True, auto_required_signers=True, force_skeys=True)
+            signed_tx.transaction_witness_set.vkey_witnesses = [pycardano.witness.VerificationKeyWitness(WALLET_VKEY, WALLET_SKEY.sign(signed_tx.transaction_body.hash()))]
+            old_fee = tx_builder.fee
+
+            # evaluate to set mem/steps budget
+            r = context.evaluate_tx(signed_tx)
+            for k in list(r.keys()):
+                r_tag = 0 if k.startswith('spend') else 1
+                r_idx = int(k.split(':')[1])
+                for txbuilder_r in tx_builder._redeemer_list:
+                    if txbuilder_r.tag == pycardano.plutus.RedeemerTag(r_tag):
+                        txbuilder_r.ex_units = pycardano.plutus.ExecutionUnits(mem=int(r[k].mem+2000), steps=int(r[k].steps+20000))
+
+            # build again with newly computed budget
+            signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=True, auto_required_signers=True, force_skeys=True)
+            signed_tx.transaction_witness_set.vkey_witnesses = [pycardano.witness.VerificationKeyWitness(WALLET_VKEY, WALLET_SKEY.sign(signed_tx.transaction_body.hash()))]
+            new_fee = tx_builder.fee
+            logger(f"fee reduced from {old_fee} to {new_fee}")
+
+            tx = signed_tx
+
+        else:
+            # BODY
+            tx_body = pycardano.TransactionBody(
+                    inputs=tx_inputs,
+                    outputs=tx_outputs,
+                    mint=mint,
+                    fee=tx_fee,
+                    reference_inputs=reference_inputs,
+                    collateral=collateral,
+                    validity_start=validity_start,
+                    ttl=ttl,
+                    script_data_hash=script_data_hash,
+                    total_collateral=total_collateral,
+                    collateral_return=collateral_return,
+                    required_signers=[WALLET_VKEY.hash()],
+                    )
+
+            # WITNESS
+            tx_hash = tx_body.hash()
+            signature = WALLET_SKEY.sign(tx_hash)
+            vkey_witness = pycardano.witness.VerificationKeyWitness(WALLET_VKEY, signature)
+            transaction_witness_set = pycardano.witness.TransactionWitnessSet(
+                    vkey_witnesses=[vkey_witness],
+                    redeemer=redeemers,
+                    )
+
+            # TRANSACTION
+            tx = pycardano.transaction.Transaction(
+                    transaction_body=tx_body,
+                    transaction_witness_set=transaction_witness_set
+                    )
 
         # WAIT?
         wait_until_valid = validity_start - slot
