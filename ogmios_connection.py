@@ -49,6 +49,15 @@ class OgmiosConnection:
         self.do_connect()
         return True
 
+    def disconnect(self):
+        try:
+            self.ws.close()
+            return True
+        except Exception as e:
+            print(e)
+
+        return False
+
     def do_connect(self):
         ctx = None
         if self.config is not None and self.config.get('OGMIOS_DISABLE_CERTIFICATE_CHECK'):

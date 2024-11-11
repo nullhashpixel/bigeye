@@ -124,14 +124,7 @@ class ChainWatcher:
         if success:
             return
 
-        try:
-            self.log(f"try reconnecting to Ogmios...")
-            time.sleep(5)
-            self.ogmios  = Ogmios(self.config.get('OGMIOS', 'ws://0.0.0.0:1337'), config=self.config)
-            self._query_utxos()
-            success = True
-        except Exception as e:
-            self.log(f"<x1b[31merror: could not query utxos (failed again): {e}<x1b[0m")
+        self._query_utxos()
 
 
     def _query_utxos(self):

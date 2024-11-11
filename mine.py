@@ -178,7 +178,7 @@ solution_submitted_timeout = -1
 last_success_time = time.monotonic()
 last_alive_check = time.monotonic()
 chain_watcher_restart_attempts = 0
-
+had_errors = False
 
 while True:
 
@@ -192,6 +192,26 @@ while True:
             time.sleep(2)
             chain.restart()
 
+    if had_errors:
+        try:
+            if config.get('OGMIOS_SHARED_CONNECTION'):
+                ogmios_connection.close()
+                time.sleep(1)
+                ogmios_connection.connect()
+            else:
+                chain.ogmios.close()
+                mempool.ogmios.close()
+                time.sleep(1)
+                chain.ogmios.connect()
+                mempool.ogmios.connect()
+                logger(f"Ogmios reconnect successful.")
+        except Exception as e:
+            logger(f"Ogmios reconnect failed: {e}")
+
+        chain   = ChainWatcher(profile=profile, ogmios_connection=ogmios_connection)
+        mempool = MempoolWatcher(profile=profile, ogmios_connection=ogmios_connection)
+        logger(f"recovered.")
+        had_errors = False
 
     # check for new blocks
     has_block = chain.events['block'].wait(timeout=WAIT_FOR_BLOCKS_S)
@@ -645,5 +665,6 @@ while True:
                     print(e)
 
     except Exception as e:
-        logger(f"ERROR: could not submit solution: {e}")
+        logger(f"ERROR: could not submit solution: {e}. Will try to recover.")
+        had_errors = True
 
