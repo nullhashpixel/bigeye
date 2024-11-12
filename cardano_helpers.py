@@ -139,13 +139,22 @@ def value_from_utxo(utxo):
 
 def get_collateral_utxo(utxos):
     for utxo in utxos:
-        if 'ada' in utxo['value'] and utxo['value']['ada']['lovelace'] > 7 * 1000000:
+        if 'ada' in utxo['value'] and len(utxo['value'].keys()) == 1 and utxo['value']['ada']['lovelace'] > 7000000 and utxo['value']['ada']['lovelace'] < 30000000:
+            return utxo
+    for utxo in utxos:
+        if 'ada' in utxo['value'] and utxo['value']['ada']['lovelace'] > 7000000:
             return utxo
     return None
 
 def get_tx_input_utxo(utxos):
     for utxo in utxos:
         if 'ada' in utxo['value'] and utxo['value']['ada']['lovelace'] > 2500000:
+            return utxo
+    return None
+
+def get_nft_utxo(utxos, policy_hex, name_hex):
+    for utxo in utxos:
+        if utxo['value'].get(policy_hex, {}).get(name_hex, 0) == 1:
             return utxo
     return None
 

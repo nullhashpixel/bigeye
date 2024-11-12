@@ -27,7 +27,7 @@ from miners import MinerManager, format_hashrate
 from tuna_tx import *
 
 PROGRAM_NAME         = "bigeye"
-VERSION              = "v0.4.0"
+VERSION              = "v0.5.0"
 
 parser = argparse.ArgumentParser(
                     prog=f'{PROGRAM_NAME} {VERSION}',
@@ -161,6 +161,13 @@ if config.get('OGMIOS_SHARED_CONNECTION') and USE_TX_BUILDER:
 if USE_TX_BUILDER:
     context = pycardano.backend.ogmios_v6.OgmiosChainContext(OGMIOS_URL.rsplit(':',1)[0].split('//')[1], int(OGMIOS_URL.rsplit(':',1)[1]), False, network=NETWORK)
 
+MINER_NFT = config.get('MINER_NFT')
+if MINER_NFT:
+    if MINER_NFT.get('policy') is None or MINER_NFT.get('name') is None:
+        logger(f"MINER_NFT: needs 'policy' and 'name' hex encoded dictionary items")
+        time.sleep(1)
+        os._exit(5)
+
 WAIT_FOR_BLOCKS_S  = 0.1
 WAIT_FOR_MEMPOOL_S = 0.1
 
@@ -262,7 +269,7 @@ while True:
             out_epoch = in_epoch + 90000 + time_now - in_posix_time
             out_posix_time = 90000 + time_now
 
-            ts = TargetState(WALLET_VKEY.hash(), VERSION_INFO)
+            ts = TargetState(WALLET_VKEY.hash(), VERSION_INFO, nft=MINER_NFT)
             ts.epoch_time    = in_epoch 
             ts.block_number  = in_block
             ts.current_hash  = bytes.fromhex(in_hash)
@@ -446,6 +453,18 @@ while True:
 
             # OUTPUTS -------------------------------------------------------------------------------------------------------------
             tx_outputs = []
+            if MINER_NFT:
+                miner_nft_utxo = get_nft_utxo(state[use_state]['wallet_utxos'], MINER_NFT['policy'], MINER_NFT['name'])
+                if miner_nft_utxo is None:
+                    logger(f"<x1b[37m<x1b[41mminer NFT not found in wallet. bigeye is configured to use a miner NFT with the 'MINER_NFT' setting. This NFT has to be in the mining wallet.<x1b[0m")
+                    raise Exception("MinerNftNotFound")
+
+                miner_nft_value = value_from_utxo(miner_nft_utxo)
+
+                # pass miner NFT through transaction
+                tx_inputs.append(tx_input_from_utxo(miner_nft_utxo))
+                tx_outputs.append(pycardano.transaction.TransactionOutput(pycardano.address.Address.from_primitive(OWN_ADDRESS), miner_nft_value))
+
             contract_out_amount = pycardano.transaction.Value(coin=contract_out_coin, multi_asset=pycardano.transaction.MultiAsset({
                         pycardano.ScriptHash(bytes.fromhex(TUNA_POLICY)): pycardano.transaction.Asset({
                             pycardano.transaction.AssetName(bytes.fromhex(TUNA_STATE_ASSETNAME)): 1,
@@ -526,7 +545,9 @@ while True:
                 tx_builder.fee_buffer = 1000
                 tx_builder.execution_memory_buffer = 0.03
                 tx_builder.execution_step_buffer = 0.03
-                signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=True, auto_required_signers=True, force_skeys=True)
+                tx_builder.collaterals = [context.utxo_by_tx_id(str(collateral_utxo['transaction']['id']), collateral_utxo['index'])]
+                merge_change = True
+                signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=merge_change, auto_required_signers=True, force_skeys=True)
                 signed_tx.transaction_witness_set.vkey_witnesses = [pycardano.witness.VerificationKeyWitness(WALLET_VKEY, WALLET_SKEY.sign(signed_tx.transaction_body.hash()))]
                 old_fee = tx_builder.fee
 
@@ -540,7 +561,7 @@ while True:
                             txbuilder_r.ex_units = pycardano.plutus.ExecutionUnits(mem=int(r[k].mem+2000), steps=int(r[k].steps+20000))
 
                 # build again with newly computed budget
-                signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=True, auto_required_signers=True, force_skeys=True)
+                signed_tx = tx_builder.build_and_sign([WALLET_SKEY], change_address=pycardano.address.Address.from_primitive(OWN_ADDRESS), merge_change=merge_change, auto_required_signers=True, force_skeys=True)
                 signed_tx.transaction_witness_set.vkey_witnesses = [pycardano.witness.VerificationKeyWitness(WALLET_VKEY, WALLET_SKEY.sign(signed_tx.transaction_body.hash()))]
                 new_fee = tx_builder.fee
                 logger(f"fee reduced from {old_fee} to {new_fee}")
