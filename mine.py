@@ -27,7 +27,7 @@ from miners import MinerManager, format_hashrate
 from tuna_tx import *
 
 PROGRAM_NAME         = "bigeye"
-VERSION              = "v0.5.0"
+VERSION              = "v0.5.1"
 
 parser = argparse.ArgumentParser(
                     prog=f'{PROGRAM_NAME} {VERSION}',
