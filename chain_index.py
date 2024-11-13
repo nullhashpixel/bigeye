@@ -152,6 +152,35 @@ class ChainIndex:
                     result['error'] = 'db error'
                     return result
 
+            @app.route("/miner_cred_hashes_from_pkh/<pkh>")
+            def miner_cred_hashes_from_pkh(pkh):
+                result = {}
+                if len(pkh) != 56:
+                    result['error'] = 'invalid pkh'
+                    return result
+                pkh = pkh.lower()
+                if not all(c in string.hexdigits for c in pkh):
+                    result['error'] = 'invalid pkh'
+                    return result
+
+                try:
+                    db = sqlite3.connect(db_filename)
+                    db.row_factory = sqlite3.Row
+                    cur = db.cursor()
+                except Exception as e:
+                    result['error'] = 'db connect error'
+                    return result
+
+                try:
+                    cur.execute(f"SELECT distinct tuna_miner_cred_hash as hash, tuna_miner_data as data FROM chain WHERE tuna_miner = ?;", [pkh])
+                    rows = cur.fetchall()
+                    result['result'] = [dict(x) for x in rows]
+                    db.close()
+                    return result
+                except Exception as e:
+                    print(f"miner_cred_hashes_from_pkh: error: {e}")
+                    result['error'] = 'db error'
+                    return result
 
             if ':' in self.config.get('CHAIN_STATE_WEBSERVER'):
                 host_name, port = self.config.get('CHAIN_STATE_WEBSERVER').split(':')
