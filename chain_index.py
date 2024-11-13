@@ -243,6 +243,17 @@ class ChainIndex:
         except:
             pass
 
+        try:
+            self.cur.execute('ALTER TABLE chain CREATE UNIQUE INDEX IF NOT EXISTS index_tuna_block ON chain(tuna_block);')
+        except:
+            pass
+
+        try:
+            self.cur.execute('ALTER TABLE chain CREATE UNIQUE INDEX IF NOT EXISTS index_block ON chain(block);')
+        except:
+            pass
+
+
     def get_tuna_block(self, tuna_block):
         self.cur.execute("SELECT block FROM chain WHERE tuna_block = ?", (tuna_block,))
         results = self.cur.fetchone()
@@ -275,3 +286,7 @@ class ChainIndex:
         self.con.commit()
         return self.cur.rowcount
 
+    def rollback_tuna(self, tuna_block):
+        self.cur.execute("DELETE FROM chain WHERE tuna_block >= :tuna_block;", {'tuna_block': tuna_block})
+        self.con.commit()
+        return self.cur.rowcount

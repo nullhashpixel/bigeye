@@ -291,30 +291,50 @@ class ChainWatcher:
         if state is not None:
             self.log(f"found a snapshot, syncing from snapshot")
 
-            # replay chain from DB to fill trie
-            chain = self.db.get_chain()
-            for row in chain:
-                self.state['tuna'].state['trie'].insert_digest(row['tuna_hash'])
-                if self.state['tuna'].state['trie'].hash.hex() != row['tuna_merkle_root']:
-                    self.log(f"<x1b[31mdatabase errror: merkle root validation failed at block {row['tuna_block']}<x1b[0m")
-                    os._exit(1)
+            replay_done = False
+            while not replay_done:
+                self.log(f"syncing...")
+                # replay chain from DB to fill trie
+                chain = self.db.get_chain()
+                seen = {}
+                truncate = None
+                row = {}
+                for row in chain:
+                    if seen.get(row['tuna_block']):
+                        self.log(f"<x1b[31mdatabase errror: duplicate block found in database file - resyncing<x1b[0m")
+                        truncate = dict(row)
+                        break
+                    seen[row['tuna_block']] = True
+                    self.state['tuna'].state['trie'].insert_digest(row['tuna_hash'])
+                    if self.state['tuna'].state['trie'].hash.hex() != row['tuna_merkle_root']:
+                        self.log(f"<x1b[31mdatabase errror: merkle root validation failed at block {row['tuna_block']}<x1b[0m")
+                        truncate = dict(row)
+                        break
 
-            # set state from DB
-            self.state['tuna'].state.update({
-                'block': state['tuna_block'],
-                'hash': state['tuna_hash'],
-                'lz': state['tuna_lz'],
-                'dn': state['tuna_dn'],
-                'epoch': state['tuna_epoch'],
-                'posix_time': state['tuna_posix_time'],
-                'merkle_root': state['tuna_merkle_root'],
-                })
+                if truncate is not None:
+                    rows_deleted = self.db.rollback_tuna(truncate['tuna_block'])
+                    self.log(f"rows deleted: <x1b[32m{rows_deleted}<x1b[0m")
+                    state = self.db.get_state()
+                    self.state['tuna'].state['trie'] = self.trie_from_genesis()
 
-            self.sync_from = {
-                    'slot': state['slot'],
-                    'id': state['id'],
-                    'height': state['block'],
-                    }
+                else:
+                    # set state from DB
+                    self.state['tuna'].state.update({
+                        'block': state['tuna_block'],
+                        'hash': state['tuna_hash'],
+                        'lz': state['tuna_lz'],
+                        'dn': state['tuna_dn'],
+                        'epoch': state['tuna_epoch'],
+                        'posix_time': state['tuna_posix_time'],
+                        'merkle_root': state['tuna_merkle_root'],
+                        })
+
+                    self.sync_from = {
+                            'slot': state['slot'],
+                            'id': state['id'],
+                            'height': state['block'],
+                            }
+                    replay_done = True
 
             self.log(f"starting from block {self.state['tuna'].state['block']}")
             
@@ -412,16 +432,26 @@ class ChainWatcher:
                     self.log(f"deleted {rows_deleted} rows")
 
                 t0 = time.monotonic()
-                # re-init 
-                self.state['tuna'] = TunaState(self.trie_from_genesis())
 
-                # replay chain from DB to fill trie
-                chain = self.db.get_chain()
-                for row in chain:
-                    self.state['tuna'].state['trie'].insert_digest(row['tuna_hash'])
-                    if self.state['tuna'].state['trie'].hash.hex() != row['tuna_merkle_root']:
-                        self.log(f"<x1b[31mdatabase error: merkle root validation failed at block {row['tuna_block']}<x1b[0m")
-                        os._exit(1)
+                init_complete = False
+
+                while not init_complete:
+                    # re-init 
+                    self.state['tuna'] = TunaState(self.trie_from_genesis())
+                    # replay chain from DB to fill trie
+                    chain = self.db.get_chain()
+                    init_error = None 
+                    for row in chain:
+                        self.state['tuna'].state['trie'].insert_digest(row['tuna_hash'])
+                        if self.state['tuna'].state['trie'].hash.hex() != row['tuna_merkle_root']:
+                            self.log(f"<x1b[31mdatabase error: merkle root validation failed at block {row['tuna_block']}<x1b[0m")
+                            init_error = dict(row)
+                            break
+                    if init_error is not None:
+                        self.db.rollback_tuna(row['tuna_block'])
+                        init_complete = False
+                    else:
+                        init_complete = True
 
                 # set state from DB
                 state = self.db.get_state()
